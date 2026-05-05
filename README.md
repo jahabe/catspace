@@ -4,4 +4,11 @@ You know how some people stare at a fireplace or the ocean to zone out and decom
 
 ![preview](images/preview.png)
 
+### Link 
 [ → Open Catspace](https://jahabe.github.io/catspace/)
+
+### Built with
+* HTML Canvas API: stars, parallax, and animation loop
+* Device Orientation API: tilt your phone, and the stars follow
+* Vanilla JS: no frameworks, no libraries
+* Claude: for pair programming and iteration
