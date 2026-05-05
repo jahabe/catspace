@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #04080f; overflow: hidden; width: 100vw; height: 100vh; cursor: crosshair; }
+  canvas { position: absolute; inset: 0; }
+  #info {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: monospace;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.25);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let W = canvas.width  = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  W = canvas.width  = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+});
+
+
+// ─────────────────────────────────────────
+//  별 레이어 설정
+//  speed      : 마우스 시차 강도
+//  driftSpeed : 자동으로 오른쪽 흘러가는 속도
+// ─────────────────────────────────────────
+
+const STAR_LAYERS = [
+  { count: 180, speed: 0.08, driftSpeed: 0.012, r: 0.7, alpha: 0.45, color: [200, 210, 255] },
+  { count:  90, speed: 0.22, driftSpeed: 0.030, r: 1.2, alpha: 0.65, color: [220, 235, 255] },
+  { count:  35, speed: 0.52, driftSpeed: 0.065, r: 2.0, alpha: 0.85, color: [255, 248, 230] },
+  { count:  12, speed: 1.10, driftSpeed: 0.130, r: 3.2, alpha: 1.00, color: [255, 255, 255] },
+];
+
+const stars = [];
+
+for (const layer of STAR_LAYERS) {
+  for (let i = 0; i < layer.count; i++) {
+    stars.push({
+      bx:            Math.random(),
+      by:            Math.random(),
+      r:             layer.r * (0.7 + Math.random() * 0.6),
+      speed:         layer.speed,
+      driftSpeed:    layer.driftSpeed,
+      alpha:         layer.alpha * (0.7 + Math.random() * 0.3),
+      color:         layer.color,
+      twinkleOffset: Math.random() * Math.PI * 2,
+      twinkleSpeed:  0.3 + Math.random() * 0.9,
+    });
+  }
+}
+
+
+// ─────────────────────────────────────────
+//  성운 (배경 빛 번짐)
+// ─────────────────────────────────────────
+
+const NEBULA_HUES = [200, 220, 260, 280, 320];
+
+const nebulae = NEBULA_HUES.map(hue => ({
+  bx:         Math.random(),
+  by:         Math.random(),
+  speed:      0.04,
+  driftSpeed: 0.006,
+  rx:         60 + Math.random() * 80,
+  ry:         30 + Math.random() * 50,
+  hue:        hue,
+  alpha:      0.04 + Math.random() * 0.06,
+}));
+
+
+// ─────────────────────────────────────────
+//  고양이 이미지
+// ─────────────────────────────────────────
+
+const CAT_SRCS = [
+  'images/Cat1.png',
+  'images/Cat2.png',
+  'images/Cat3.png',
+  'images/Cat4.png',
+  'images/Cat5.png',
+  'images/Cat6.png',
+  'images/Cat7.png',
+  'images/Cat8.png',
+  'images/Cat9.png',
+  'images/Cat10.png',
+  'images/Cat11.png',
+  'images/Cat12.png',
+  'images/Cat13.png',
+  'images/Cat14.png',
+  'images/Cat15.png',
+  'images/Cat16.png',
+  'images/Cat17.png',
+  'images/Cat18.png',
+  'images/Cat19.png',
+  'images/Cat20.png',
+  'images/Cat21.png',
+  'images/Cat22.png',
+  'images/Cat23.png',
+  'images/Cat24.png'
+];
+
+const catImgs = CAT_SRCS.map(src => {
+  const img = new Image();
+  img.src = src;
+  return img;
+});
+
+// 랜덤 순서로 순환
+let catQueue = Array.from({ length: CAT_SRCS.length }, (_, i) => i).sort(() => Math.random() - 0.5);
+let catQueueIdx = 0;
+
+function getNextCatIndex() {
+  const idx = catQueue[catQueueIdx % CAT_SRCS.length];
+  catQueueIdx++;
+  if (catQueueIdx % CAT_SRCS.length === 0) catQueue.sort(() => Math.random() - 0.5);
+  return idx;
+}
+
+function spawnCat() {
+  const isSpinning = Math.random() < 0.3;
+
+  // 뱅글뱅글 vs 평온하게
+  const spinSpeed = isSpinning
+    ? (Math.random() * 0.022 + 0.010) * (Math.random() < 0.5 ? 1 : -1)
+    : (Math.random() * 0.0015 + 0.0001) * (Math.random() < 0.5 ? 1 : -1);
+
+  return {
+    imgIdx:        getNextCatIndex(),
+    scale:         0.08 + Math.random() * 0.08,
+    x:             -300,
+    y:             H * (0.15 + Math.random() * 0.70),
+    vx:            0.6 + Math.random() * 0.9,
+    spinSpeed:     spinSpeed,
+    angle:         Math.random() * Math.PI * 2,
+    bobOffset:     Math.random() * Math.PI * 2,
+    bobAmp:        3 + Math.random() * 8,
+    bobSpeed:      0.25 + Math.random() * 0.4,
+    parallaxSpeed: 0.25 + Math.random() * 0.35,
+    alpha:         0.88 + Math.random() * 0.12,
+  };
+}
+
+// ─────────────────────────────────────────
+//  고양이 파이프라인
+// ─────────────────────────────────────────
+
+const MAX_CATS = 6;
+const SPAWN_THRESHOLDS = [0, 1/6, 2/6, 3/6, 4/6, 5/6]; // 마리 수별 소환 진행도 임계값
+
+const activeCats = [];
+let imagesLoaded = 0;
+
+catImgs.forEach(img => {
+  img.onload = () => {
+    imagesLoaded++;
+    if (imagesLoaded === CAT_SRCS.length) activeCats.push(spawnCat());
+  };
+});
+
+function getCatProgress(cat) {
+  return cat.x / W;
+}
+
+// ─────────────────────────────────────────
+//  마우스 / 자이로 시차 입력
+// ─────────────────────────────────────────
+
+let targetX  = 0;
+let targetY  = 0;
+let currentX = 0;
+let currentY = 0;
+let usingGyro = false;
+
+document.addEventListener('mousemove', e => {
+  if (usingGyro) return;
+  targetX = e.clientX / W - 0.5;
+  targetY = e.clientY / H - 0.5;
+});
+
+document.addEventListener('mouseleave', () => {
+  if (!usingGyro) { targetX = 0; targetY = 0; }
+});
+
+if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission !== 'function') {
+  window.addEventListener('deviceorientation', e => {
+    usingGyro = true;
+    targetX = Math.max(-45, Math.min(45, e.gamma || 0)) / 45;
+    targetY = Math.max(-45, Math.min(45, (e.beta  || 0) - 30)) / 45;
+  });
+}
+
+// ─────────────────────────────────────────
+//  메인 루프
+// ─────────────────────────────────────────
+
+let driftX = 0;
+let time   = 0;
+
+function draw() {
+  time   += 0.016;
+  driftX += 0.0003;
+
+  // 시차: 목표값을 부드럽게 따라가기
+  currentX += (targetX - currentX) * 0.06;
+  currentY += (targetY - currentY) * 0.06;
+
+  ctx.fillStyle = '#04080f';
+  ctx.fillRect(0, 0, W, H);
+
+
+  // ── 성운 ─────────────────────────────────
+
+  for (const n of nebulae) {
+    const autoDrift = driftX * n.driftSpeed * W * 12;
+    const parallaxX = currentX * n.speed * W * 0.4;
+    const parallaxY = currentY * n.speed * H * 0.4;
+
+    const nx = ((n.bx * W + parallaxX + autoDrift) % W + W) % W;
+    const ny = n.by * H + parallaxY;
+
+    const grad = ctx.createRadialGradient(nx, ny, 0, nx, ny, n.rx);
+    grad.addColorStop(0, `hsla(${n.hue}, 80%, 60%, ${n.alpha})`);
+    grad.addColorStop(1, `hsla(${n.hue}, 60%, 30%, 0)`);
+
+    ctx.save();
+    ctx.scale(1, n.ry / n.rx);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(nx, ny * (n.rx / n.ry), n.rx, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+
+  // ── 별 ───────────────────────────────────
+
+  for (const s of stars) {
+    const autoDrift = driftX * s.driftSpeed * W * 12;
+    const parallaxX = currentX * s.speed * W * 0.5;
+    const parallaxY = currentY * s.speed * H * 0.5;
+
+    const x = ((s.bx * W + parallaxX + autoDrift) % W + W) % W;
+    const y = ((s.by * H + parallaxY)             % H + H) % H;
+
+    const twinkle = 0.6 + 0.4 * Math.sin(time * s.twinkleSpeed + s.twinkleOffset);
+    const alpha   = s.alpha * twinkle;
+    const [r, g, b] = s.color;
+
+    // 큰 별: 빛 번짐 + 십자 빛줄기
+    if (s.r > 2) {
+      const glow = ctx.createRadialGradient(x, y, 0, x, y, s.r * 3);
+      glow.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha})`);
+      glow.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(x, y, s.r * 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (s.r > 2.5) {
+        const crossLen = s.r * 5;
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.5})`;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x - crossLen, y);
+        ctx.lineTo(x + crossLen, y);
+        ctx.moveTo(x, y - crossLen);
+        ctx.lineTo(x, y + crossLen);
+        ctx.stroke();
+      }
+    }
+
+    // 별 본체
+    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(x, y, s.r * twinkle, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+
+  // ── 고양이 파이프라인 ─────────────────────
+  for (let i = activeCats.length - 1; i >= 0; i--) {
+    const cat = activeCats[i];
+    const img = catImgs[cat.imgIdx];
+    if (!img.complete || !img.naturalWidth) continue;
+
+    cat.x     += cat.vx;
+    cat.angle += cat.spinSpeed;
+
+    const drawW = img.naturalWidth  * cat.scale;
+    const drawH = img.naturalHeight * cat.scale;
+
+    const bob       = Math.sin(time * cat.bobSpeed + cat.bobOffset) * cat.bobAmp;
+    const parallaxX = currentX * cat.parallaxSpeed * W * 0.3;
+    const parallaxY = currentY * cat.parallaxSpeed * H * 0.3;
+
+    ctx.save();
+    ctx.globalAlpha = cat.alpha;
+    ctx.translate(cat.x + parallaxX, cat.y + parallaxY + bob);
+    ctx.rotate(cat.angle);
+    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+    ctx.restore();
+
+    // 화면 오른쪽 벗어나면 제거
+    if (cat.x > W + drawW) {
+      activeCats.splice(i, 1);
+    }
+  }
+
+  // 파이프라인 소환 로직
+  if (activeCats.length === 0) {
+    // 아무도 없으면 즉시 첫 고양이 소환
+    activeCats.push(spawnCat());
+
+  } else if (activeCats.length < MAX_CATS) {
+    // 선두(가장 오른쪽) 고양이 진행도 확인
+    const leader   = activeCats.reduce((a, b) => a.x > b.x ? a : b);
+    const progress = getCatProgress(leader);
+    const threshold = SPAWN_THRESHOLDS[activeCats.length];
+
+    if (progress >= threshold) {
+      activeCats.push(spawnCat());
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+
+</script>
+</body>
+</html>
